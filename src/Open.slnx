@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Open.Api/Open.Api.csproj" />
+  <Project Path="Open.Core/Open.Core.csproj" Id="70d713a1-7f85-490c-8302-1c1d97c1a383" />
+</Solution>
