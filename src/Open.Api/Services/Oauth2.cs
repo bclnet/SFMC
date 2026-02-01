@@ -1,11 +1,13 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Open.MC.Auth;
 using StackExchange.Redis;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Web;
 using static Open.Globals;
 using static Open.Services.Globals;
-using static Open.Services.Oauth2.TokenController;
+using static Open.Services.Oauth2.McController;
 namespace Open.Services.Oauth2;
 
 /// <summary>
@@ -27,19 +29,20 @@ public class AuthorizeController : ControllerBase {
         public override string ToString() => $"{state}|{scope}|{code_challenge}|{client_id}|{client_secret}|{redirect_uri}";
         public static Req FromString(string s) {
             var p = s.Split(['|'], 6);
-            return new Req { state = p[0], prompt = "", scope = p[1], code_challenge = p[2], response_type = "", client_id = p[3], client_secret = p[4], redirect_uri = new Uri(p[5]) };
+            return new Req { state = p[0], prompt = "", scope = p[1], code_challenge = p[2], response_type = "code", client_id = p[3], client_secret = p[4], redirect_uri = new Uri(p[5]) };
         }
     }
 
     [HttpGet]
     public IActionResult Get([FromQuery] Req req) {
+        var baseUrl = $"https://{SUBDOMAIN}.auth.marketingcloudapis.com/v2";
         req.client_id = CLIENT_ID;
         req.client_secret = CLIENT_SECRET;
         req.scope = SCOPE;
 
         // build redirect
         var host = NGROK ?? HttpContext.Request.ToString();
-        var b = new UriBuilder($"https://{SUBDOMAIN}.auth.marketingcloudapis.com/v2/authorize");
+        var b = new UriBuilder($"{baseUrl}/authorize");
         var q = HttpUtility.ParseQueryString(b.Query);
         q["client_id"] = req.client_id;
         q["response_type"] = "code";
@@ -60,10 +63,8 @@ public class McController(IConnectionMultiplexer muxer) : ControllerBase {
 
     public class Req {
         public required string state { get; set; }
-        // primary
         public string? code { get; set; }
         public string? tssd { get; set; }
-        // error
         public string? error { get; set; }
         public string? error_description { get; set; }
     }
@@ -83,16 +84,18 @@ public class McController(IConnectionMultiplexer muxer) : ControllerBase {
 
         // store spike
         var host = NGROK ?? HttpContext.Request.ToString();
-        if (req.error == null)
+        if (req.error == null) {
+            var redisKey = $"spike/{auth.code_challenge}";
             await Task.WhenAll(
-                _redis.StringSetAsync(auth.code_challenge, JsonSerializer.Serialize(new Spike {
+                _redis.StringSetAsync(redisKey, JsonSerializer.Serialize(new Spike {
                     code = req.code!,
                     clientId = auth.client_id,
                     clientSecret = auth.client_secret!,
                     redirectUri = $"{host}/oauth2/mc",
                     scope = auth.scope
                 })),
-                _redis.KeyExpireAsync(req.state, TimeSpan.FromSeconds(3600)));
+                _redis.KeyExpireAsync(redisKey, TimeSpan.FromSeconds(120)));
+        }
 
         // build redirect
         var b = new UriBuilder(auth.redirect_uri);
@@ -144,39 +147,18 @@ public class TokenController(HttpClient client, IConnectionMultiplexer muxer) : 
         public string? sfdc_community_id { get; set; }
     }
 
-    public class TokenReq {
-        public required string grant_type { get; set; }
-        public required string code { get; set; }
-        public required string client_id { get; set; }
-        public string? client_secret { get; set; }
-        public required string redirect_uri { get; set; }
-        public required string scope { get; set; }
-    }
-
-    public class TokenRes {
-        // primary
-        public string? access_token { get; set; }
-        public string? refresh_token { get; set; }
-        public int? expires_in { get; set; }
-        public string? token_type { get; set; }
-        public string? rest_instance_url { get; set; }
-        public string? soap_instance_url { get; set; }
-        public string? scope { get; set; }
-        // error
-        public string? error { get; set; }
-        public string? error_description { get; set; }
-    }
-
     [HttpPost]
     public async Task<Res?> Post([FromForm] Req req) {
+        var baseUrl = $"https://{SUBDOMAIN}.auth.marketingcloudapis.com/v2";
+
         // get spike
         string? json;
-        json = await _redis.StringGetAsync(req.code);
+        json = await _redis.StringGetAsync($"spike/{req.code}");
         if (string.IsNullOrEmpty(json)) { NotFound(); return default; }
-        var spike = JsonSerializer.Deserialize<McController.Spike>(json) ?? throw new NullReferenceException("Spike");
+        var spike = JsonSerializer.Deserialize<Spike>(json) ?? throw new NullReferenceException("Spike");
 
         // get token
-        var tokReq = await _client.PostAsJsonAsync($"https://{SUBDOMAIN}.auth.marketingcloudapis.com/v2/token", new TokenReq {
+        var tokReq = await _client.PostAsJsonAsync($"{baseUrl}/token", new tokenRequestBody {
             grant_type = "authorization_code",
             code = spike.code,
             client_id = spike.clientId,
@@ -184,12 +166,25 @@ public class TokenController(HttpClient client, IConnectionMultiplexer muxer) : 
             redirect_uri = spike.redirectUri,
             scope = spike.scope,
         });
-        tokReq.EnsureSuccessStatusCode();
-        var tokRes = await tokReq.Content.ReadFromJsonAsync<TokenRes>() ?? throw new NullReferenceException("TokenRes");
+        if (!tokReq.IsSuccessStatusCode) {
+            var tokErr = await tokReq.Content.ReadFromJsonAsync<httpErrorResponseBody>();
+            throw new Exception(tokErr?.message);
+        }
+        var tokRes = await tokReq.Content.ReadFromJsonAsync<tokenResponseBody>();
+
+        // store session-ctx
+        var redisKey = $"ctx/{tokRes!.access_token!}";
+        await Task.WhenAll(
+            _redis.StringSetAsync(redisKey, JsonSerializer.Serialize(new SessionCtx {
+                accessToken = tokRes!.access_token!,
+                baseUrl = $"https://{SUBDOMAIN}.auth.marketingcloudapis.com/v2",
+                userName = "Unknown",
+            })),
+            _redis.KeyExpireAsync(redisKey, TimeSpan.FromMinutes(10)));
 
         // return res
         return new() {
-            token_type = tokRes.token_type!,
+            token_type = tokRes!.token_type!,
             scope = "refresh_token api web", //tokenRes.scope
             id = $"{HOST}/id/{ORGID}/{USERID}",
             access_token = tokRes.access_token!,
@@ -206,7 +201,7 @@ public class TokenController(HttpClient client, IConnectionMultiplexer muxer) : 
 /// <summary>
 /// UserInfoController
 /// </summary>
-[ApiController, Route("services/oauth2/[controller]")]
+[ApiController, Route("services/oauth2/[controller]"), Authorize]
 public class UserInfoController(HttpClient client) : ControllerBase {
     readonly HttpClient _client = client;
 
@@ -216,37 +211,24 @@ public class UserInfoController(HttpClient client) : ControllerBase {
         public required string user_id { get; set; }
     }
 
-    public class UserInfoRes {
-        public string? exp { get; set; }
-        public string? refresh_token { get; set; }
-        public int? expires_in { get; set; }
-        public string? token_type { get; set; }
-        public string? rest_instance_url { get; set; }
-        public string? soap_instance_url { get; set; }
-        public string? scope { get; set; }
-    }
-
     [HttpGet]
-    public Res Get() {
-        var hdr = Request.Headers.ToList();
-        var auth = Request.Headers["Authorization"];
+    public async Task<Res> Get() {
+        var ctx = ((CtxClaimsPrincipal)User).Ctx;
 
-        //// get token
-        //var tokReq = await _client.PostAsJsonAsync($"https://{SUBDOMAIN}.auth.marketingcloudapis.com/v2/userinfo", new TokenReq {
-        //    grant_type = "authorization_code",
-        //    code = spike.code,
-        //    client_id = spike.clientId,
-        //    client_secret = spike.clientSecret,
-        //    redirect_uri = spike.redirectUri,
-        //    scope = spike.scope,
-        //});
-        //tokReq.EnsureSuccessStatusCode();
-        //var tokRes = await tokReq.Content.ReadFromJsonAsync<TokenRes>() ?? throw new NullReferenceException("TokenRes");
+        // get token
+        _client.DefaultRequestHeaders.Authorization = ctx.Authorization;
+        var tokReq = await _client.GetAsync($"{ctx.baseUrl}/userinfo");
+        if (!tokReq.IsSuccessStatusCode) {
+            var tokErr = await tokReq.Content.ReadFromJsonAsync<authTokenErrorResponseBody>();
+            throw new Exception(tokErr?.error_description);
+        }
+        var tokRes = await tokReq.Content.ReadFromJsonAsync<userInfoResponseBody>();
 
+        // return res
         return new() {
-            preferred_username = USERNAME,
-            organization_id = ORGID,
-            user_id = USERID,
+            preferred_username = tokRes!.user.preferred_username,
+            organization_id = $"{tokRes.organization.enterprise_id}",
+            user_id = $"{tokRes.organization.member_id}",
         };
     }
 }

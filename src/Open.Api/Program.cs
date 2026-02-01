@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.HttpLogging;
+using Open.Middleware;
+using Open.Services.Data;
 using StackExchange.Redis;
 
 // Add services to the container.
@@ -16,9 +18,24 @@ builder.Services.AddHttpLogging(logging => {
     logging.CombineLogs = true; // Optional: combine request/response into one log entry
 });
 
+// auth
+builder.Services.AddAuthentication(options => {
+    options.DefaultAuthenticateScheme = CtxBearerOptions.DefaultScheme;
+    options.DefaultChallengeScheme = CtxBearerOptions.DefaultScheme;
+})
+.AddScheme<CtxBearerOptions, CtxBearerHandler>(CtxBearerOptions.DefaultScheme, options => { });
+
+builder.Services.AddAuthentication();
+//builder.Services.AddAuthorization(options => {
+//    options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
+//});
+
 // redis
 builder.Services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Connect("localhost"));
 builder.Services.AddHttpClient();
+
+// singletons
+builder.Services.AddSingleton<DataX>();
 
 // Configure the HTTP request pipeline.
 var app = builder.Build();
@@ -32,8 +49,9 @@ app.Use(async (context, next) => {
 });
 
 app.UseHttpLogging();
-//app.UseAuthorization();
-//app.MapGet("/", () => "Hello World! Welcome to the API.");
 app.UseRouting();
+app.UseAuthentication();
+app.UseAuthorization();
+//app.MapGet("/", () => "Hello World! Welcome to the API.");
 app.MapControllers();
 app.Run();
