@@ -11,21 +11,29 @@ public class CtxBearerOptions : AuthenticationSchemeOptions {
     public const string DefaultScheme = "CtxBearer";
 }
 
+/// <summary>
+/// CtxBearerHandler
+/// </summary>
+/// <see cref="https://dev.to/kazinix/aspnet-core-custom-token-authentication-2j9a"/>
+/// <param name="options"></param>
+/// <param name="logger"></param>
+/// <param name="encoder"></param>
+/// <param name="muxer"></param>
 public class CtxBearerHandler(IOptionsMonitor<CtxBearerOptions> options, ILoggerFactory logger, UrlEncoder encoder, IConnectionMultiplexer muxer) : AuthenticationHandler<CtxBearerOptions>(options, logger, encoder) {
     readonly IDatabase _redis = muxer.GetDatabase();
 
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync() {
-        if (!Request.Headers.ContainsKey("Authorization")) return AuthenticateResult.Fail("Missing Authorization Header");
-        var authHeader = Request.Headers.Authorization.ToString();
-        if (!authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)) return AuthenticateResult.Fail("Invalid Authorization Header Scheme");
-        var token = authHeader[7..].Trim();
+        if (!Request.Headers.ContainsKey("Authorization")) return AuthenticateResult.NoResult(); //.Fail("Missing Authorization Header");
+        var authorization = Request.Headers.Authorization.ToString();
+        if (!authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)) return AuthenticateResult.Fail("Invalid Authorization Header Scheme");
+        var token = authorization[7..].Trim();
 
         // get ctx
         string? json;
         json = await _redis.StringGetAsync($"ctx/{token}");
         if (string.IsNullOrEmpty(json)) return AuthenticateResult.Fail("Invalid Token");
         var ctx = JsonSerializer.Deserialize<SessionCtx>(json) ?? throw new NullReferenceException("SessionCtx");
-        if (ctx.accessToken != token) return AuthenticateResult.Fail("Invalid Token");
+        if (ctx.accessToken != token) return AuthenticateResult.Fail("Mismatched Token");
 
         // set principal
         var identity = new ClaimsIdentity([

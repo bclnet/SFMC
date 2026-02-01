@@ -25,6 +25,9 @@ builder.Services.AddAuthentication(options => {
 })
 .AddScheme<CtxBearerOptions, CtxBearerHandler>(CtxBearerOptions.DefaultScheme, options => { });
 
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddTransient(s => s.GetService<IHttpContextAccessor>()!.HttpContext!.User);
+
 builder.Services.AddAuthentication();
 //builder.Services.AddAuthorization(options => {
 //    options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));

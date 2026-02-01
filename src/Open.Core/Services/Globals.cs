@@ -1,11 +1,10 @@
 using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Text.Json.Serialization;
-
 namespace Open.Services;
 
 public class Globals {
-    public static string ORGID = "orgID";
+    public static string ORGID = "00D5e0000000000";
     public static string USERID = "userID";
     public static string USERNAME = "username";
 }

@@ -1,5 +1,9 @@
 NODE_TLS_REJECT_UNAUTHORIZED=0
 
+sf org list auth
+sf org login web --instance-url https://localhost:7019 -a sf
+sf org logout --target-org me@my.org
+
 START ngrok:
 ngrok http 5019
 

@@ -1,6 +1,71 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using static Open.Globals;
+using static Open.Services.Globals;
 namespace Open.Services.Data;
+
+/// <summary>
+/// DataController
+/// </summary>
+[ApiController, Route("services/[controller]"), Authorize]
+public class DataController(DataX data) : ControllerBase {
+    readonly DataX _data = data;
+
+    [HttpGet]
+    public async Task<object> Get(string apiVersion) => new Dictionary<string, string> {
+        ["metadata"] = "/services/data/v62.0/metadata",
+        ["eclair"] = "/services/data/v62.0/eclair",
+        ["folders"] = "/services/data/v62.0/folders",
+        ["jsonxform"] = "/services/data/v62.0/jsonxform",
+        ["appMenu"] = "/services/data/v62.0/appMenu",
+        ["iot"] = "/services/data/v62.0/iot",
+        ["analytics"] = "/services/data/v62.0/analytics",
+        ["smartdatadiscovery"] = "/services/data/v62.0/smartdatadiscovery",
+        ["composite"] = "/services/data/v62.0/composite",
+        ["parameterizedSearch"] = "/services/data/v62.0/parameterizedSearch",
+        ["fingerprint"] = "/services/data/v62.0/fingerprint",
+        ["domino"] = "/services/data/v62.0/domino",
+        ["serviceTemplates"] = "/services/data/v62.0/serviceTemplates",
+        ["recent"] = "/services/data/v62.0/recent",
+        ["dedupe"] = "/services/data/v62.0/dedupe",
+        ["query"] = "/services/data/v62.0/query",
+        ["ai"] = "/services/data/v62.0/ai",
+        ["consent"] = "/services/data/v62.0/consent",
+        ["omnistudio"] = "/services/data/v62.0/omnistudio",
+        ["digitalwallet"] = "/services/data/v62.0/digitalwallet",
+        ["compactLayouts"] = "/services/data/v62.0/compactLayouts",
+        ["knowledgeManagement"] = "/services/data/v62.0/knowledgeManagement",
+        ["actions"] = "/services/data/v62.0/actions",
+        ["support"] = "/services/data/v62.0/support",
+        ["tooling"] = "/services/data/v62.0/tooling",
+        ["prechatForms"] = "/services/data/v62.0/prechatForms",
+        ["contact-tracing"] = "/services/data/v62.0/contact-tracing",
+        ["chatter"] = "/services/data/v62.0/chatter",
+        ["payments"] = "/services/data/v62.0/payments",
+        ["tabs"] = "/services/data/v62.0/tabs",
+        ["quickActions"] = "/services/data/v62.0/quickActions",
+        ["queryAll"] = "/services/data/v62.0/queryAll",
+        ["commerce"] = "/services/data/v62.0/commerce",
+        ["wave"] = "/services/data/v62.0/wave",
+        ["search"] = "/services/data/v62.0/search",
+        ["identity"] = $"https://{HOST}/id/{ORGID}/{USERID}",
+        ["theme"] = "/services/data/v62.0/theme",
+        ["nouns"] = "/services/data/v62.0/nouns",
+        ["event"] = "/services/data/v62.0/event",
+        ["connect"] = "/services/data/v62.0/connect",
+        ["licensing"] = "/services/data/v62.0/licensing",
+        ["limits"] = "/services/data/v62.0/limits",
+        ["process"] = "/services/data/v62.0/process",
+        ["jobs"] = "/services/data/v62.0/jobs",
+        ["localizedvalue"] = "/services/data/v62.0/localizedvalue",
+        ["mobile"] = "/services/data/v62.0/mobile",
+        ["emailConnect"] = "/services/data/v62.0/emailConnect",
+        ["tokenizer"] = "/services/data/v62.0/tokenizer",
+        ["async"] = "/services/data/v62.0/async",
+        ["externalservices"] = "/services/data/v62.0/externalservices",
+        ["sobjects"] = "/services/data/v62.0/sobjects"
+    };
+}
 
 /// <summary>
 /// QueryController
@@ -20,7 +85,7 @@ public class QueryController(DataX data) : ControllerBase {
     public async Task<object> Get(string apiVersion, [FromQuery] string q) {
         var ctx = ((CtxClaimsPrincipal)User).Ctx;
         var res = await _data.QueryAsync(ctx, apiVersion, q, false);
-        if (res == null || res[0] is ApiError) return NotFound(res ?? [new ApiError("QueryAsync returned null", "NULL")]);
+        if (res == null || (res.Length > 0 && res[0] is ApiError)) return NotFound(res ?? [new ApiError("QueryAsync returned null", "NULL")]);
         return new Res() {
             totalSize = res.Length,
             done = true,
@@ -72,7 +137,7 @@ public class ToolingController(DataX data) : ControllerBase {
     public async Task<object> query(string apiVersion, [FromQuery] string q) {
         var ctx = ((CtxClaimsPrincipal)User).Ctx;
         var res = await _data.QueryAsync(ctx, apiVersion, q, true);
-        if (res == null || res[0] is ApiError) return NotFound(res ?? [new ApiError("QueryAsync returned null", "NULL")]);
+        if (res == null || (res.Length > 0 && res[0] is ApiError)) return NotFound(res ?? [new ApiError("QueryAsync returned null", "NULL")]);
         return new QueryRes() {
             totalSize = res.Length,
             done = true,
@@ -100,7 +165,6 @@ public class ToolingController(DataX data) : ControllerBase {
 
     [HttpGet, HttpPatch, HttpDelete, Route("sobjects/{sobject}/{id}")]
     public async Task<object> sobjects_idget(string apiVersion, string sobject, string id) => throw new NotImplementedException();
-
 
     [HttpGet, Route("sobjects/ApexLog/{id}/Body")]
     public async Task<object> sobjects_apexlog(string apiVersion, string sobject, string id) => throw new NotImplementedException();

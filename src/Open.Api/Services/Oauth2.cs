@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Open.MC.Auth;
 using StackExchange.Redis;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Web;
@@ -118,11 +119,11 @@ public class TokenController(HttpClient client, IConnectionMultiplexer muxer) : 
 
     public class Req {
         public required string grant_type { get; set; }         // authorization_code
-        public required string code { get; set; }               // AE_NN0M7sO7BYOsLxeAJQHFqiVtYVrW6xtVY74m6n2s
         public required string client_id { get; set; }          // PlatformCLI
         public required string? client_secret { get; set; }     // {optional}
-        public required Uri redirect_uri { get; set; }          // http://localhost:1717/OauthRedirect
-        public required string code_verifier { get; set; }      // z8ko1KPq4jHbAE_fMbW3dMPMoa0ViOCdtsEV7WoNstXQ6dxke-A4EiMbimOy9a4m-p_Zo0od72b8xWnE4NQTvhjhlgBCNDTpEWQnaZy6Kbd1FDaXRwOLl6ILTkNvy365Zm-kEcu2QRErGYYhWXSwhhRv8sl4ynGxPzRp7hbvERU
+        public string? code { get; set; }               // AE_NN0M7sO7BYOsLxeAJQHFqiVtYVrW6xtVY74m6n2s
+        public string? code_verifier { get; set; }      // z8ko1KPq4jHbAE_fMbW3dMPMoa0ViOCdtsEV7WoNstXQ6dxke-A4EiMbimOy9a4m-p_Zo0od72b8xWnE4NQTvhjhlgBCNDTpEWQnaZy6Kbd1FDaXRwOLl6ILTkNvy365Zm-kEcu2QRErGYYhWXSwhhRv8sl4ynGxPzRp7hbvERU
+        public Uri? redirect_uri { get; set; }          // http://localhost:1717/OauthRedirect
     }
 
     public class Res {
@@ -149,6 +150,7 @@ public class TokenController(HttpClient client, IConnectionMultiplexer muxer) : 
 
     [HttpPost]
     public async Task<Res?> Post([FromForm] Req req) {
+        var x = Request.Form.ToList();
         var baseUrl = $"https://{SUBDOMAIN}.auth.marketingcloudapis.com/v2";
 
         // get spike
